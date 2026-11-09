@@ -4,7 +4,6 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LensBeam } from '../stage/fixtures.js';
 import { Particles, Confetti, Emitter } from '../stage/effects.js';
 import { ADDITIVE, glowTexture } from '../stage/materials.js';
@@ -62,7 +61,8 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
   // textures from the design project's tex folder (compressed to WebP)
   // own cache key: the lobby already uses cache.tex for its procedural textures
   cache.eventTex ??= Promise.all(['led-map', 'ice', 'concrete', 'plate', 'crystal-swirl'].map((n) => loadTex(`/assets/tex/${n}.webp`)));
-  const [gltf, data, [ledMap, iceTex, concreteTex, plateTex, swirlTex]] = await Promise.all([cache.stage, cache.stageData, cache.eventTex]);
+  cache.crowd ??= loader.gltf('/assets/chars/crowd.glb', 283000);
+  const [gltf, data, [ledMap, iceTex, concreteTex, plateTex, swirlTex], crowdG] = await Promise.all([cache.stage, cache.stageData, cache.eventTex, cache.crowd]);
   [iceTex, concreteTex, plateTex].forEach((t) => { if (t) t.wrapS = t.wrapT = THREE.RepeatWrapping; });
 
   const scene = new THREE.Scene();
@@ -179,30 +179,56 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
   barGeo.setAttribute('color', new THREE.BufferAttribute(barCol, 3));
   scene.add(new THREE.Points(barGeo, new THREE.PointsMaterial({ map: glowTexture(), size: 0.45, vertexColors: true, ...ADDITIVE })));
 
-  // ---------- crowd at the design's 2,500 positions (light instanced silhouettes) ----------
-  const parts = [
-    new THREE.CapsuleGeometry(0.22, 0.85, 2, 6).translate(0, 0.65, 0),
-    new THREE.SphereGeometry(0.16, 8, 6).translate(0, 1.42, 0),
-    new THREE.CapsuleGeometry(0.06, 0.5, 2, 4).rotateZ(-0.35).translate(0.26, 1.55, 0),
-  ].map((g) => { g.deleteAttribute('uv'); return g.index ? g.toNonIndexed() : g; });
+  // ---------- crowd at the design's 2,500 positions: six different characters ----------
+  // crowd.glb holds each character baked in two dance poses (same topology, pose B in _posb/_norb);
+  // the vertex shader blends between them per spectator, so 2,500 people dance for a few draw calls.
   const crowdTime = { value: 0 };
-  const crowdMat = new THREE.MeshStandardMaterial({ color: '#141824', roughness: 0.6, metalness: 0.3 });
+  const crowdMat = new THREE.MeshStandardMaterial({ vertexColors: true, color: '#7d8494', roughness: 0.62, metalness: 0.15 }); // dimmed: a crowd in the dark, lit by the rig
   crowdMat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = crowdTime;
-    sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\nfloat ph = instanceMatrix[3].x * 1.7 + instanceMatrix[3].z * 2.3;\ntransformed.y += max(0.0, sin(uTime * 8.2 + ph)) * 0.14;');
+    sh.vertexShader = 'uniform float uTime;\nattribute vec3 _posb;\nattribute vec3 _norb;\n' + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', `float ph = instanceMatrix[3].x * 1.7 + instanceMatrix[3].z * 2.3;
+        float k = smoothstep(0.0, 1.0, 0.5 + 0.5 * sin(uTime * 4.1 + ph));
+        vec3 objectNormal = normalize(mix(normal, _norb, k) + vec3(0.0, 1e-4, 0.0));`)
+      .replace('#include <begin_vertex>', `vec3 transformed = mix(position, _posb, k);
+        transformed.y += max(0.0, sin(uTime * 8.2 + ph)) * 0.1;`);
   };
-  const crowd = new THREE.InstancedMesh(mergeGeometries(parts), crowdMat, data.crowd.length);
+  const crowdGroup = new THREE.Group();
+  const kinds = {};
+  crowdG.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const [, id, lod] = o.name.match(/^(.*)_lod(\d)$/) ?? [];
+    if (id) (kinds[id] ??= {})[lod] = o.geometry;
+  });
+  // mix of characters (weights = how often each appears)
+  const WEIGHT = { knight: 0.8, robot: 1, soldier: 1, xbot: 0.9, michelle: 1.2, street: 1.3 };
+  const ids = Object.keys(kinds);
+  const wSum = ids.reduce((a, id) => a + (WEIGHT[id] ?? 1), 0);
+  const pickKind = (r) => { let a = r * wSum; for (const id of ids) { a -= WEIGHT[id] ?? 1; if (a <= 0) return id; } return ids[ids.length - 1]; };
+  const buckets = {};
   const dmy = new THREE.Object3D();
+  const tint = new THREE.Color();
   const phones = [];
   data.crowd.forEach(([x, z], i) => {
     dmy.position.set(x, 0, z);
     dmy.rotation.y = Math.atan2(-x, 36 - z) + (rnd(i * 3) - 0.5) * 0.5; // face the centre LED
     dmy.scale.setScalar(0.92 + rnd(i * 7) * 0.18);
     dmy.updateMatrix();
-    crowd.setMatrixAt(i, dmy.matrix);
+    const lod = z < 80 ? '0' : '1'; // front half full detail, back half the light version
+    const key = pickKind(rnd(i * 13 + 5)) + lod;
+    // each spectator gets a slightly different shade so the same character never looks cloned
+    tint.setHSL(rnd(i * 17), 0.25, 0.55 + rnd(i * 19) * 0.25).lerp(new THREE.Color(1, 1, 1), 0.55);
+    (buckets[key] ??= []).push([dmy.matrix.clone(), tint.clone()]);
     if (rnd(i * 11) < 0.45) { const h = V(0.36, 1.82, 0.05).applyMatrix4(dmy.matrix); phones.push(h.x, h.y, h.z); }
   });
+  Object.entries(buckets).forEach(([key, list]) => {
+    const geo = kinds[key.slice(0, -1)][key.slice(-1)];
+    const im = new THREE.InstancedMesh(geo, crowdMat, list.length);
+    list.forEach(([m, c], i) => { im.setMatrixAt(i, m); im.setColorAt(i, c); });
+    im.computeBoundingSphere();
+    crowdGroup.add(im);
+  });
+  const crowd = crowdGroup;
   scene.add(crowd);
   const phoneGeo = new THREE.BufferGeometry();
   phoneGeo.setAttribute('position', new THREE.Float32BufferAttribute(phones, 3));

@@ -4,7 +4,7 @@ import { buildCollider, Input, Player } from '../core/player.js';
 import { createPortal } from './portal.js';
 import { Particles } from '../stage/effects.js';
 import { ADDITIVE, glowTexture } from '../stage/materials.js';
-import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { ROSTER, charById, createCharacter, addDance } from '../core/characters.js';
 
 // Room layout (glTF Y-up; Blender x,y → three x,-z)
 // Room A: x -6..6, z -12..0   Room B: x 5.5..18, z 3.5..12
@@ -29,9 +29,10 @@ export async function createLobby(engine, ctx) {
 
   // ---- assets (cached between visits) ----
   cache.dungeon ??= loader.gltf('/assets/dungeon.glb', 253412);
-  cache.knight ??= loader.gltf('/assets/knight.glb', 294576);
   cache.torches ??= loader.json('/assets/torches.json');
-  const [dungeonG, knightG, torches] = await Promise.all([cache.dungeon, cache.knight, cache.torches]);
+  let charId = cache.charId ?? (() => { try { return localStorage.getItem('char'); } catch { return null; } })() ?? 'knight';
+  charId = charById(charId).id;
+  const [dungeonG, firstChar, torches] = await Promise.all([cache.dungeon, createCharacter(charById(charId), { loader, cache }), cache.torches]);
 
   // ---- materials (procedural, replace Blender's node materials) ----
   const T = cache.lobbyTex ??= { bricks: stoneBricks(), floor: flagstones(), wood: woodPlanks() };
@@ -104,33 +105,74 @@ export async function createLobby(engine, ctx) {
 
   // ---- collision + player ----
   const collider = buildCollider([dungeon, ...portals.map((p) => p.group)], [groundGeo]);
-  const knight = cloneSkinned(knightG.scene); // skinned mesh needs a skeleton-aware clone
-  const box = new THREE.Box3().setFromObject(knight);
-  const s = 1.75 / (box.max.y - box.min.y);
-  knight.scale.setScalar(s);
-  knight.position.y = -box.min.y * s;
-  knight.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; if (o.material) o.material.envMapIntensity = 2.2; } });
   const model = new THREE.Group();
-  model.add(knight);
   // soft aura under the character
   const aura = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTexture(), color: '#6fe7ff', ...ADDITIVE, opacity: 0.5 }));
   aura.position.y = 0.02;
   model.add(aura);
 
   const input = new Input(engine.renderer.domElement, ui);
-  // skeletal animation clips baked from the rig
-  const mixer = new THREE.AnimationMixer(knight);
-  const actions = {};
-  knightG.animations.forEach((clip) => { actions[clip.name.replace(/_.*$/, '')] = mixer.clipAction(clip); });
-  const player = new Player({ model, collider, camera, input, spawn: SPAWN, spawnYaw: Math.PI, anim: { mixer, actions, current: null } });
+  const player = new Player({ model, collider, camera, input, spawn: SPAWN, spawnYaw: Math.PI });
   scene.add(player.root);
   player.onFly = (on) => ui.setFlying(on);
+
+  // ---- character: swap the rigged model inside the player ----
+  let ch = null;
+  function wear(next) {
+    if (ch) { ch.mixer.stopAllAction(); model.remove(ch.object); }
+    ch = next;
+    model.add(ch.object);
+    aura.material.color.set(ch.def.aura);
+    player.anim = { mixer: ch.mixer, actions: ch.actions, current: null };
+    charId = ch.def.id;
+    cache.charId = charId;
+    try { localStorage.setItem('char', charId); } catch { /* private mode */ }
+  }
+  wear(firstChar);
+
+  // ---- character selection: the lobby itself is the showroom ----
+  let selecting = !cache.picked;
+  let pickToken = 0;
+  let orbit = 0;
+  async function pick(id) {
+    const token = ++pickToken;
+    ui.selectBusy(id, true);
+    try {
+      const next = await createCharacter(charById(id), { loader, cache });
+      if (token !== pickToken) return;
+      wear(next);
+      showcase();
+    } finally { ui.selectBusy(id, false); }
+  }
+  async function showcase() {
+    const c = ch;
+    const dance = c.actions.Dance ?? c.actions.Wave ?? await addDance(c, { loader, cache }).catch(() => null);
+    if (c !== ch || !selecting) return;
+    player.playClip(dance ? (c.actions.Dance ? 'Dance' : 'Wave') : 'Idle');
+  }
+  function setSelecting(on) {
+    selecting = on;
+    if (on) {
+      player.flying = false; ui.setFlying(false);
+      player.respawn();
+      orbit = 0;
+      ui.showSelect({ roster: ROSTER, current: charId, onPick: pick, onConfirm: () => setSelecting(false) });
+      showcase();
+    } else {
+      cache.picked = true;
+      ui.hideSelect();
+      input.jumpPressed = input.flyToggle = input.act = false;
+      player.playClip('Idle');
+    }
+    ui.showLobby(!on);
+  }
 
   const trail = new Particles(500);
   scene.add(trail.points);
 
   // ---- UI ----
-  ui.showLobby(true);
+  ui.onChangeChar = () => setSelecting(true);
+  setSelecting(selecting);
   let near = null;
   let entering = false;
   let lightTimer = 0;
@@ -139,7 +181,17 @@ export async function createLobby(engine, ctx) {
   return {
     scene, camera, exposure: 1.25,
     update(dt, t) {
-      player.update(dt);
+      if (selecting) {
+        // turntable: camera circles in front of the character, who dances
+        orbit += dt * 0.35;
+        const ang = player.facing + Math.sin(orbit) * 0.6;
+        const f = player.feet;
+        camera.position.set(f.x + Math.sin(ang) * 3.3, f.y + 1.55, f.z + Math.cos(ang) * 3.3);
+        camera.lookAt(f.x, f.y + 0.95, f.z);
+        player.time += dt;
+        player.anim?.mixer.update(dt);
+        player.animateBody(dt, false);
+      } else player.update(dt);
       tMat.uniforms.uTime.value = t;
       portals.forEach((p) => p.update(t));
 
@@ -167,8 +219,9 @@ export async function createLobby(engine, ctx) {
         const local = p.group.worldToLocal(pp.clone());
         const inside = Math.abs(local.x) < p.width / 2 && local.y < 4.5 && local.y > 0;
         if (inside && Math.abs(local.z) < 3.2) near = p;
-        if (inside && local.z < 0.25 && local.z > -0.6 && !entering) { entering = true; onPortal(p.id); }
+        if (inside && local.z < 0.25 && local.z > -0.6 && !entering && !selecting) { entering = true; onPortal(p.id); }
       }
+      if (selecting) near = null;
       ui.setPrompt(near ? `${near.title} — đi vào cổng hoặc nhấn E` : null);
       if (near && input.act && !entering) { entering = true; onPortal(near.id); }
       input.act = false;
@@ -180,7 +233,9 @@ export async function createLobby(engine, ctx) {
       trail.mat.uniforms.uScale.value = h * dpr * 0.9;
     },
     dispose() {
-      mixer.stopAllAction();
+      ch?.mixer.stopAllAction();
+      ui.onChangeChar = null;
+      ui.hideSelect();
       input.dispose();
       collider.boundsTree = null;
       collider.dispose();

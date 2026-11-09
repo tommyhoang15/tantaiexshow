@@ -47,7 +47,58 @@ const ui = {
   setTour(on) { $('tourBtn')?.setAttribute('aria-pressed', String(on)); },
   setScene(sel) { if ($('sceneSel').value !== sel) $('sceneSel').value = sel; },
   setGlow(on) { $('tGlow').setAttribute('aria-pressed', String(on)); },
+
+  // ---- character selection ----
+  onChangeChar: null,
+  _sel: null,
+  showSelect({ roster, current, onPick, onConfirm }) {
+    const list = $('cselList');
+    let idx = Math.max(0, roster.findIndex((c) => c.id === current));
+    const render = () => {
+      const c = roster[idx];
+      $('cselNum').textContent = `${String(idx + 1).padStart(2, '0')} / ${String(roster.length).padStart(2, '0')}`;
+      $('cselName').textContent = c.name;
+      $('cselTag').textContent = c.tag;
+      $('charSelect').style.setProperty('--csel-accent', c.aura);
+      list.querySelectorAll('[data-char]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.char === c.id)));
+    };
+    const go = (i) => { idx = (i + roster.length) % roster.length; render(); onPick(roster[idx].id); };
+    list.replaceChildren(...roster.map((c, i) => {
+      const b = document.createElement('button');
+      b.className = 'xbtn xbtn--toggle csel-chip';
+      b.dataset.char = c.id;
+      b.setAttribute('role', 'radio');
+      b.style.setProperty('--chip', c.aura);
+      b.innerHTML = `<b>${String(i + 1).padStart(2, '0')}</b>`;
+      b.append(c.name);
+      b.onclick = () => go(i);
+      return b;
+    }));
+    $('cselPrev').onclick = () => go(idx - 1);
+    $('cselNext').onclick = () => go(idx + 1);
+    $('cselGo').onclick = onConfirm;
+    const key = (e) => {
+      if ($('charSelect').hidden || !$('realEvent').hidden) return;
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') go(idx - 1);
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') go(idx + 1);
+      else if (e.key === 'Enter' && !e.target.closest?.('button')) onConfirm();
+    };
+    addEventListener('keydown', key);
+    this._sel = { key };
+    render();
+    $('charSelect').hidden = false;
+    $('cselGo').focus({ preventScroll: true });
+  },
+  hideSelect() {
+    if (this._sel) removeEventListener('keydown', this._sel.key);
+    this._sel = null;
+    $('charSelect').hidden = true;
+  },
+  selectBusy(id, on) {
+    $('cselList').querySelector(`[data-char="${id}"]`)?.classList.toggle('is-busy', on);
+  },
 };
+$('changeChar').onclick = () => ui.onChangeChar?.();
 $('helpClose').onclick = () => { $('help').hidden = true; };
 
 // ---------- "Sự kiện thực tế": the real show (official YouTube player) ----------
@@ -120,6 +171,7 @@ function onPortal(id) {
       // the stage design file (~2.6 MB) downloads + decodes in the background while you explore the lobby
       cache.stage ??= loader.gltf('/assets/stage.glb', 2700000);
       cache.stageData ??= loader.json('/assets/stage.json');
+      cache.crowd ??= loader.gltf('/assets/chars/crowd.glb', 283000);
     });
   } catch (err) {
     console.error(err);

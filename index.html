@@ -46,7 +46,10 @@
     <b>WASD</b> di chuyển · <b>Shift</b> chạy · <b>Space</b> nhảy · <b>F</b> hoặc nhấn đúp Space để bay (Space lên · C xuống) · kéo chuột để xoay camera
     <button class="x" id="helpClose" aria-label="Ẩn hướng dẫn">×</button>
   </div>
-  <button class="xbtn xbtn--hot real-open" data-real-open>▶ Sự kiện thực tế</button>
+  <div class="lobby-actions">
+    <button class="xbtn" id="changeChar">☺ Đổi nhân vật</button>
+    <button class="xbtn xbtn--hot" data-real-open>▶ Sự kiện thực tế</button>
+  </div>
   <div class="mode" id="flyBadge" hidden>Đang bay</div>
   <div class="prompt" id="prompt" hidden></div>
   <div class="stick" id="stick" aria-hidden="true"><span></span></div>
@@ -57,6 +60,26 @@
     <button class="rb big" id="bJump">Nhảy</button>
   </div>
 </div>
+
+<!-- Character selection (the lobby is the showroom behind it) -->
+<section id="charSelect" class="csel" hidden aria-labelledby="cselTitle">
+  <header class="csel-head">
+    <p class="ev-kicker"><span class="ev-live"></span>(00) Trước khi vào sảnh</p>
+    <h2 id="cselTitle">Chọn nhân vật</h2>
+  </header>
+  <div class="csel-dock">
+    <div class="csel-pick">
+      <button class="xbtn csel-arrow" id="cselPrev" aria-label="Nhân vật trước">‹</button>
+      <div class="csel-id" aria-live="polite"><p class="csel-num" id="cselNum">01 / 06</p><p class="csel-name" id="cselName"></p><p class="csel-tag" id="cselTag"></p></div>
+      <button class="xbtn csel-arrow" id="cselNext" aria-label="Nhân vật tiếp theo">›</button>
+    </div>
+    <div class="csel-list" id="cselList" role="radiogroup" aria-label="Nhân vật"></div>
+    <div class="csel-foot">
+      <p class="csel-hint"><b>← →</b> đổi nhân vật · <b>Enter</b> vào sảnh</p>
+      <button class="xbtn xbtn--hot csel-go" id="cselGo">Vào sảnh ▶</button>
+    </div>
+  </div>
+</section>
 
 <!-- Event HUD -->
 <div id="eventUi" class="hud" hidden>
