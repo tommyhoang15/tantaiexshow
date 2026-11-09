@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sơ đồ 3D khán đài</title>
+<meta name="description" content="Sơ đồ 3D khán đài: xem giá từng khu, góc nhìn từ khu và vào sự kiện bằng nhân vật của bạn.">
+<meta name="theme-color" content="#0d1017">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<main class="stage-wrap">
+  <canvas id="scene" aria-label="Sơ đồ 3D khu vực khán giả"></canvas>
+
+  <header class="top">
+    <div class="title">
+      <p class="eyebrow" id="eyebrow"></p>
+      <h1 id="eventTitle"></h1>
+    </div>
+    <nav class="views" aria-label="Góc nhìn">
+      <button class="chip" data-view="overview" aria-pressed="true">Toàn cảnh</button>
+      <button class="chip" data-view="top" aria-pressed="false">Từ trên</button>
+      <button class="chip" data-view="stage" aria-pressed="false">Từ sân khấu</button>
+      <button class="chip" data-view="closeup" aria-pressed="false">Cận sân khấu</button>
+      <button class="chip" id="labelsBtn" aria-pressed="true">Tên khu</button>
+      <a class="chip" href="/" style="text-decoration:none">← Về sảnh</a>
+    </nav>
+  </header>
+
+  <section class="showbar" aria-label="Điều khiển show">
+    <label class="sr-only" for="showScene">Chương trình đèn</label>
+    <select class="chip" id="showScene"><option value="auto">Show tự động</option></select>
+    <button class="chip" data-fx="flame">Lửa</button>
+    <button class="chip" data-fx="co2">CO2</button>
+    <button class="chip" data-fx="gerb">Pháo sáng</button>
+    <button class="chip" data-fx="confetti">Pháo giấy</button>
+    <button class="chip" id="hazeBtn" aria-pressed="true">Khói</button>
+    <button class="chip" id="vidPlay">Tạm dừng video</button>
+    <button class="chip" id="vidSound" aria-pressed="false">Bật tiếng</button>
+  </section>
+
+  <aside class="legend" id="legend" aria-label="Bảng giá"></aside>
+
+  <p class="hint" id="hint">Kéo để xoay · cuộn hoặc chụm để phóng to · chạm vào khu để xem giá</p>
+  <div class="tip" id="tip" hidden></div>
+
+  <section class="panel" id="zonePanel" hidden aria-live="polite">
+    <span class="dot" id="zDot"></span>
+    <div class="panel-main">
+      <p class="kind" id="zKind"></p>
+      <h2 id="zName"></h2>
+      <p class="price" id="zPrice"></p>
+      <dl class="ranks">
+        <div><dt>Gần sân khấu chính</dt><dd id="zR1"></dd></div>
+        <div><dt>Gần Stage B</dt><dd id="zR2"></dd></div>
+      </dl>
+    </div>
+    <div class="panel-acts">
+      <button class="btn primary" id="joinHere">Vào khu này</button>
+      <button class="btn" id="povBtn">Xem từ khu này</button>
+      <button class="btn ghost" id="closePanel" aria-label="Bỏ chọn">Bỏ chọn</button>
+    </div>
+  </section>
+
+  <button class="btn primary fab" id="joinOpen">Vào sự kiện</button>
+
+  <form class="dialog" id="joinForm" hidden>
+    <h2>Vào sự kiện</h2>
+    <label for="nameIn">Tên của bạn</label>
+    <input id="nameIn" maxlength="16" placeholder="Tên hiện trên đầu nhân vật" autocomplete="off">
+    <label for="showIn">Đêm diễn</label>
+    <select id="showIn"></select>
+    <label for="zoneIn">Khu</label>
+    <select id="zoneIn"></select>
+    <label>Màu áo</label>
+    <div class="swatches" id="shirtIn" role="radiogroup" aria-label="Màu áo"></div>
+    <p class="err" id="joinErr" hidden>Nhập tên trước đã nhé.</p>
+    <div class="row">
+      <button class="btn primary" type="submit">Vào</button>
+      <button class="btn ghost" type="button" id="joinCancel">Huỷ</button>
+    </div>
+  </form>
+
+  <div class="playbar" id="playbar" hidden>
+    <span class="who"><b id="pName"></b> · <span id="pZone"></span></span>
+    <select class="btn" id="danceSel" aria-label="Điệu nhảy"></select>
+    <form class="chat" id="chatForm">
+      <input id="chatIn" maxlength="60" placeholder="Nói gì đó…" autocomplete="off" aria-label="Tin nhắn">
+    </form>
+    <button class="btn ghost" id="leaveBtn">Rời</button>
+    <p class="move-hint">WASD / mũi tên hoặc chạm sàn để di chuyển</p>
+  </div>
+</main>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

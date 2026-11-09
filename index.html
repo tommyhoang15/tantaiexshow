@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sảnh trải nghiệm 3D</title>
+<meta name="description" content="Sảnh 3D: điều khiển nhân vật, đi qua cổng để vào sân khấu pha lê Crystal Rave hoặc sơ đồ Rap Việt All-Star.">
+<meta name="theme-color" content="#05060a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/assets/dungeon.glb" as="fetch" type="model/gltf-binary" crossorigin>
+<link rel="preload" href="/assets/knight.glb" as="fetch" type="model/gltf-binary" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Chakra+Petch:wght@500;600;700&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+<style>
+  /* critical CSS for the loading screen (paints before any JS) */
+  html, body { margin: 0; height: 100%; background: #05060a; color: #eef1f6; font: 15px/1.45 'Be Vietnam Pro', system-ui, sans-serif; overflow: hidden; }
+  #loading { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 60%, #0d1a3a 0%, #05060a 70%); transition: opacity .5s; }
+  #loading.done { opacity: 0; pointer-events: none; }
+  .ld { width: min(320px, 80vw); text-align: center; }
+  .ld h1 { font: 800 26px/1.1 Sora, sans-serif; margin: 0 0 6px; letter-spacing: .02em; }
+  .ld p { margin: 0 0 18px; color: #9aa3b5; font-size: 13px; }
+  .bar { height: 4px; background: rgba(255,255,255,.1); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #3b7dff, #7fe8ff); transition: width .2s; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Thế giới 3D"></canvas>
+<div id="fade"></div>
+
+<div id="loading" role="status" aria-live="polite">
+  <div class="ld">
+    <h1>Sảnh trải nghiệm</h1>
+    <p id="ldText">Đang tải thế giới…</p>
+    <div class="bar"><i id="ldBar"></i></div>
+  </div>
+</div>
+
+<!-- Lobby HUD -->
+<div id="lobbyUi" class="hud" hidden>
+  <div class="tl">
+    <p class="eyebrow">Sảnh dungeon</p>
+    <h2>Chọn một cổng để vào</h2>
+  </div>
+  <div class="help" id="help">
+    <b>WASD</b> di chuyển · <b>Shift</b> chạy · <b>Space</b> nhảy · <b>F</b> hoặc nhấn đúp Space để bay (Space lên · C xuống) · kéo chuột để xoay camera
+    <button class="x" id="helpClose" aria-label="Ẩn hướng dẫn">×</button>
+  </div>
+  <button class="xbtn xbtn--hot real-open" data-real-open>▶ Sự kiện thực tế</button>
+  <div class="mode" id="flyBadge" hidden>Đang bay</div>
+  <div class="prompt" id="prompt" hidden></div>
+  <div class="stick" id="stick" aria-hidden="true"><span></span></div>
+  <div class="tbtns">
+    <button class="rb" id="bFly">Bay</button>
+    <button class="rb" id="bUp" hidden>Lên</button>
+    <button class="rb" id="bDown" hidden>Xuống</button>
+    <button class="rb big" id="bJump">Nhảy</button>
+  </div>
+</div>
+
+<!-- Event HUD -->
+<div id="eventUi" class="hud" hidden>
+  <header class="ev-top">
+    <div class="ev-title">
+      <p class="ev-kicker"><span class="ev-live"></span>Bản dựng 3D · sân khấu pha lê</p>
+      <h2>Crystal Rave</h2>
+    </div>
+    <div class="ev-actions">
+      <button class="xbtn xbtn--hot" data-real-open>▶ Sự kiện thực tế</button>
+      <button class="xbtn" id="exitBtn">← Về sảnh</button>
+    </div>
+  </header>
+
+  <section class="ev-console" id="evConsole" aria-label="Bảng điều khiển">
+    <button class="ev-fold" id="evFold" aria-expanded="true" aria-controls="evConsole" title="Thu gọn bảng điều khiển">▾</button>
+    <div class="ev-line">
+      <span class="ev-tag"><b>01</b>Góc nhìn</span>
+      <nav class="ev-row" id="views" aria-label="Góc nhìn"></nav>
+    </div>
+    <div class="ev-line">
+      <span class="ev-tag"><b>02</b>Show</span>
+      <label class="sr" for="sceneSel">Chương trình đèn</label>
+      <select class="xbtn xbtn--select" id="sceneSel"><option value="auto">Tự động</option></select>
+      <span class="ev-tag ev-tag--gap"><b>03</b>Hiệu ứng</span>
+      <div class="ev-row">
+        <button class="xbtn" data-fx="flame">Lửa</button>
+        <button class="xbtn" data-fx="co2">CO2</button>
+        <button class="xbtn" data-fx="confetti">Pháo giấy</button>
+        <span class="ev-sep" aria-hidden="true"></span>
+        <button class="xbtn xbtn--toggle" id="tHaze" aria-pressed="true">Khói</button>
+        <button class="xbtn xbtn--toggle" id="tCrowd" aria-pressed="true">Khán giả</button>
+        <button class="xbtn xbtn--toggle" id="tGlow" aria-pressed="true">Glow</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Real event: the actual Tiger Crystal Rave show -->
+<div id="realEvent" class="real" hidden role="dialog" aria-modal="true" aria-labelledby="realTitle">
+  <div class="real-panel">
+    <header class="real-head">
+      <p class="ev-label"><b>(04)</b> Sự kiện thực tế</p>
+      <h2 id="realTitle">Tiger Crystal Rave · Vũng Tàu</h2>
+      <button class="xbtn real-close" id="realClose" aria-label="Đóng">✕ Đóng</button>
+    </header>
+    <div class="real-body">
+      <div class="real-media">
+        <div class="real-frame" id="realFrame"></div>
+        <p class="real-note">Set DJ Vinai · YouTube. Bản 3D tạm dừng khi bạn xem.</p>
+      </div>
+      <article class="ticket" aria-label="Thông tin sự kiện">
+        <div class="ticket-top">
+          <p class="ticket-kicker">Frozen Party · đêm nhạc nước &amp; băng</p>
+          <p class="ticket-date"><span>01</span>.09.2024</p>
+          <p class="ticket-sub">18:00 – 22:00 · check-in từ 15:00</p>
+        </div>
+        <dl class="ticket-rows">
+          <div><dt>Địa điểm</dt><dd>KDL San Hô Xanh, đường Thùy Vân, Vũng Tàu</dd></div>
+          <div><dt>Warm-up</dt><dd>31.08 · DJ bar, 16:00 – 19:00</dd></div>
+          <div><dt>Line-up</dt><dd>DJ Vinai, Tóc Tiên, Phương Ly, Tăng Duy Tân, Wean Le, 24K.Right, DJ Hoaprox, Mỹ Mỹ</dd></div>
+          <div><dt>Sân khấu</dt><dd>“Cọp băng” khổng lồ: phun băng, phun lửa, phun nước; súng nước thủy lực, pháo hoa từ nóc sân khấu</dd></div>
+          <div><dt>Vé</dt><dd>Miễn phí</dd></div>
+        </dl>
+        <div class="ticket-stub">
+          <a class="xbtn xbtn--hot" href="https://kenh14.vn/sau-vo-so-tam-thu-tu-cong-dong-mang-tiger-crystal-rave-da-mang-dai-tiec-bang-nuoc-quay-lai-vung-tau-215240820165054473.chn" target="_blank" rel="noopener">Đọc bài trên Kênh14 ↗</a>
+          <p>Nguồn: Kênh14, 20.08.2024</p>
+        </div>
+      </article>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/app.js"></script>
+</body>
+</html>
