@@ -95,17 +95,24 @@
   </header>
 
   <section class="ev-console" id="evConsole" aria-label="Bảng điều khiển">
-    <button class="ev-fold" id="evFold" aria-expanded="true" aria-controls="evConsole" title="Thu gọn bảng điều khiển">▾</button>
-    <div class="ev-line">
-      <span class="ev-tag"><b>01</b>Góc nhìn</span>
+    <button class="ev-fold" id="evFold" aria-expanded="true" aria-controls="evConsole" title="Thu gọn (H)">▾</button>
+    <nav class="ev-tabs" role="tablist" aria-label="Nhóm điều khiển">
+      <button role="tab" data-tab="cam" title="Phím 1"><b>01</b>Góc nhìn</button>
+      <button role="tab" data-tab="show" title="Phím 2"><b>02</b>Show</button>
+      <button role="tab" data-tab="light" title="Phím 3"><b>03</b>Đèn</button>
+      <button role="tab" data-tab="led" title="Phím 4"><b>04</b>LED</button>
+      <button role="tab" data-tab="truss" title="Phím 5"><b>05</b>Truss</button>
+    </nav>
+
+    <div class="ev-pane" role="tabpanel" data-pane="cam">
       <nav class="ev-row" id="views" aria-label="Góc nhìn"></nav>
     </div>
-    <div class="ev-line">
-      <span class="ev-tag"><b>02</b>Show</span>
-      <label class="sr" for="sceneSel">Chương trình đèn</label>
-      <select class="xbtn xbtn--select" id="sceneSel"><option value="auto">Tự động</option></select>
-      <span class="ev-tag ev-tag--gap"><b>03</b>Hiệu ứng</span>
+
+    <div class="ev-pane" role="tabpanel" data-pane="show" hidden>
       <div class="ev-row">
+        <label class="sr" for="sceneSel">Chương trình đèn</label>
+        <select class="xbtn xbtn--select" id="sceneSel"><option value="auto">Tự động</option></select>
+        <span class="ev-sep" aria-hidden="true"></span>
         <button class="xbtn" data-fx="flame">Lửa</button>
         <button class="xbtn" data-fx="co2">CO2</button>
         <button class="xbtn" data-fx="confetti">Pháo giấy</button>
@@ -113,6 +120,58 @@
         <button class="xbtn xbtn--toggle" id="tHaze" aria-pressed="true">Khói</button>
         <button class="xbtn xbtn--toggle" id="tCrowd" aria-pressed="true">Khán giả</button>
         <button class="xbtn xbtn--toggle" id="tGlow" aria-pressed="true">Glow</button>
+      </div>
+    </div>
+
+    <div class="ev-pane" role="tabpanel" data-pane="light" data-group="light" hidden>
+      <div class="ev-row">
+        <button class="xbtn xbtn--toggle" data-toggle="light.top" aria-pressed="true" title="Beam trên đỉnh truss">Beam đỉnh</button>
+        <button class="xbtn xbtn--toggle" data-toggle="light.ledTop" aria-pressed="true" title="Spot trên nóc LED">Spot LED</button>
+        <button class="xbtn xbtn--toggle" data-toggle="light.ladderCentre" aria-pressed="true">Thang giữa</button>
+        <button class="xbtn xbtn--toggle" data-toggle="light.ladderSide" aria-pressed="true">Thang hông</button>
+        <button class="xbtn xbtn--toggle" data-toggle="light.sideTop" aria-pressed="true">Wash</button>
+        <button class="xbtn xbtn--toggle" data-toggle="light.par" aria-pressed="true">Par</button>
+        <button class="xbtn xbtn--toggle" data-toggle="light.blinder" aria-pressed="true">Blinder</button>
+        <button class="xbtn xbtn--toggle" data-toggle="light.bars" aria-pressed="true" title="Thanh LED VL3015">Thanh LED</button>
+      </div>
+      <div class="ev-row">
+        <label class="ev-range"><span>Sáng</span><input type="range" data-range="light.master" min="0" max="1.5" step="0.05" value="1"><output>100%</output></label>
+        <label class="ev-range"><span>Nhịp</span><input type="range" data-range="light.speed" min="0.25" max="2" step="0.05" value="1" data-unit="x"><output>1.00×</output></label>
+        <span class="ev-sep" aria-hidden="true"></span>
+        <span class="ev-mini">Màu</span><div class="ev-sw" data-pick="light.color" role="radiogroup"><button class="sw sw--auto" data-v="" style="--c:transparent" aria-checked="true" title="Theo show" aria-label="Theo show">A</button><button class="sw" data-v="#7fe8ff" style="--c:#7fe8ff" aria-checked="false" title="Băng" aria-label="Băng"></button><button class="sw" data-v="#1d5cff" style="--c:#1d5cff" aria-checked="false" title="Xanh" aria-label="Xanh"></button><button class="sw" data-v="#ff9a1f" style="--c:#ff9a1f" aria-checked="false" title="Hổ phách" aria-label="Hổ phách"></button><button class="sw" data-v="#ff1e3c" style="--c:#ff1e3c" aria-checked="false" title="Đỏ" aria-label="Đỏ"></button><button class="sw" data-v="#ff4fd8" style="--c:#ff4fd8" aria-checked="false" title="Hồng" aria-label="Hồng"></button><button class="sw" data-v="#ffffff" style="--c:#ffffff" aria-checked="false" title="Trắng" aria-label="Trắng"></button></div>
+        <button class="xbtn ev-reset" data-reset="light" title="Trả đèn về theo show">↺</button>
+      </div>
+    </div>
+
+    <div class="ev-pane" role="tabpanel" data-pane="led" data-group="led" hidden>
+      <div class="ev-row">
+        <button class="xbtn xbtn--toggle" data-toggle="led.on" aria-pressed="true">Bật màn</button>
+        <label class="sr" for="ledMode">Nội dung LED</label>
+        <select class="xbtn xbtn--select" id="ledMode" data-select="led.mode">
+          <option value="auto">Nội dung: theo show</option><option value="0">Trôi</option><option value="1">Kính vạn hoa</option>
+          <option value="2">Vỡ kính</option><option value="3">Đường hầm</option><option value="4">Trôi + mảnh</option>
+        </select>
+        <label class="ev-range"><span>Sáng</span><input type="range" data-range="led.bright" min="0" max="1.5" step="0.05" value="1"><output>100%</output></label>
+        <label class="ev-range"><span>Tốc độ</span><input type="range" data-range="led.speed" min="0" max="3" step="0.1" value="1" data-unit="x"><output>1.00×</output></label>
+      </div>
+      <div class="ev-row">
+        <span class="ev-mini">Màu phủ</span><div class="ev-sw" data-pick="led.tint" role="radiogroup"><button class="sw sw--auto" data-v="" style="--c:transparent" aria-checked="true" title="Theo show" aria-label="Theo show">A</button><button class="sw" data-v="#7fe8ff" style="--c:#7fe8ff" aria-checked="false" title="Băng" aria-label="Băng"></button><button class="sw" data-v="#1d5cff" style="--c:#1d5cff" aria-checked="false" title="Xanh" aria-label="Xanh"></button><button class="sw" data-v="#ff9a1f" style="--c:#ff9a1f" aria-checked="false" title="Hổ phách" aria-label="Hổ phách"></button><button class="sw" data-v="#ff1e3c" style="--c:#ff1e3c" aria-checked="false" title="Đỏ" aria-label="Đỏ"></button><button class="sw" data-v="#ff4fd8" style="--c:#ff4fd8" aria-checked="false" title="Hồng" aria-label="Hồng"></button><button class="sw" data-v="#ffffff" style="--c:#ffffff" aria-checked="false" title="Trắng" aria-label="Trắng"></button></div>
+        <button class="xbtn ev-reset" data-reset="led" title="Trả LED về theo show">↺</button>
+      </div>
+    </div>
+
+    <div class="ev-pane" role="tabpanel" data-pane="truss" data-group="truss" hidden>
+      <div class="ev-row">
+        <button class="xbtn xbtn--toggle" data-toggle="truss.truss" aria-pressed="true">Khung truss</button>
+        <button class="xbtn xbtn--toggle" data-toggle="truss.fixture" aria-pressed="true" title="Thân đèn moving / par">Thân đèn</button>
+        <button class="xbtn xbtn--toggle" data-toggle="truss.speaker" aria-pressed="true">Loa</button>
+        <button class="xbtn xbtn--toggle" data-toggle="truss.fence" aria-pressed="true">Rào chắn</button>
+        <span class="ev-sep" aria-hidden="true"></span>
+        <span class="ev-mini">Hoàn thiện</span>
+        <div class="ev-seg" data-pick="truss.finish" role="radiogroup">
+          <button data-v="" aria-checked="true">Gốc</button><button data-v="black" aria-checked="false">Đen</button><button data-v="silver" aria-checked="false">Bạc</button><button data-v="white" aria-checked="false">Trắng</button>
+        </div>
+        <button class="xbtn ev-reset" data-reset="truss" title="Hiện lại tất cả">↺</button>
       </div>
     </div>
   </section>

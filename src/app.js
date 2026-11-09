@@ -42,6 +42,7 @@ const ui = {
     toggle('tGlow', opts.onGlow);
     $('tGlow').setAttribute('aria-pressed', String(opts.glow));
     $('exitBtn').onclick = opts.onExit;
+    bindControls(opts.onControl);
   },
   setView(id) { document.querySelectorAll('#views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === id))); },
   setTour(on) { $('tourBtn')?.setAttribute('aria-pressed', String(on)); },
@@ -99,6 +100,74 @@ const ui = {
   },
 };
 $('changeChar').onclick = () => ui.onChangeChar?.();
+
+// ---------- event control panel: tabs + light / LED / truss controls ----------
+// Controls are declared in the markup (data-toggle / data-range / data-select / data-pick / data-reset);
+// each one calls onControl('group.key', value). The initial markup state is the "follow the show" default.
+const panel = $('evConsole');
+const tabs = [...panel.querySelectorAll('[data-tab]')];
+function openTab(id) {
+  tabs.forEach((t) => { const on = t.dataset.tab === id; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; });
+  panel.querySelectorAll('[data-pane]').forEach((p) => { p.hidden = p.dataset.pane !== id; });
+  try { localStorage.setItem('evTab', id); } catch { /* private mode */ }
+}
+tabs.forEach((t, i) => {
+  t.onclick = () => { if (panel.classList.contains('is-min')) toggleFold(false); openTab(t.dataset.tab); };
+  t.onkeydown = (e) => {
+    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d) return;
+    const n = tabs[(i + d + tabs.length) % tabs.length]; n.focus(); openTab(n.dataset.tab);
+  };
+});
+openTab((() => { try { return localStorage.getItem('evTab'); } catch { return null; } })() ?? 'cam');
+
+const fmt = (input) => (input.dataset.unit === 'x' ? `${(+input.value).toFixed(2)}×` : `${Math.round(input.value * 100)}%`);
+const DEFAULTS = new Map(); // element -> initial value
+panel.querySelectorAll('[data-toggle]').forEach((b) => DEFAULTS.set(b, b.getAttribute('aria-pressed')));
+panel.querySelectorAll('[data-range], [data-select]').forEach((el) => DEFAULTS.set(el, el.value));
+panel.querySelectorAll('[data-pick]').forEach((g) => DEFAULTS.set(g, g.querySelector('[aria-checked="true"]')?.dataset.v ?? ''));
+let onControl = () => {};
+
+// a tab shows an amber dot while anything in it differs from "follow the show"
+function markModified() {
+  panel.querySelectorAll('[data-group]').forEach((pane) => {
+    let mod = false;
+    pane.querySelectorAll('[data-toggle]').forEach((b) => { if (b.getAttribute('aria-pressed') !== DEFAULTS.get(b)) mod = true; });
+    pane.querySelectorAll('[data-range], [data-select]').forEach((el) => { if (el.value !== DEFAULTS.get(el)) mod = true; });
+    pane.querySelectorAll('[data-pick]').forEach((g) => { if ((g.querySelector('[aria-checked="true"]')?.dataset.v ?? '') !== DEFAULTS.get(g)) mod = true; });
+    panel.querySelector(`[data-tab="${pane.dataset.pane}"]`).classList.toggle('is-mod', mod);
+  });
+}
+const setPick = (g, v) => g.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === v)));
+
+panel.querySelectorAll('[data-toggle]').forEach((b) => {
+  b.onclick = () => { const v = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', String(v)); onControl(b.dataset.toggle, v); markModified(); };
+});
+panel.querySelectorAll('[data-range]').forEach((r) => {
+  r.oninput = () => { r.nextElementSibling.value = fmt(r); onControl(r.dataset.range, +r.value); markModified(); };
+});
+panel.querySelectorAll('[data-select]').forEach((sel) => { sel.onchange = () => { onControl(sel.dataset.select, sel.value); markModified(); }; });
+panel.querySelectorAll('[data-pick]').forEach((g) => {
+  g.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => { setPick(g, b.dataset.v); onControl(g.dataset.pick, b.dataset.v); markModified(); }; });
+});
+function resetGroup(scope) {
+  scope.querySelectorAll('[data-toggle]').forEach((b) => { const v = DEFAULTS.get(b); b.setAttribute('aria-pressed', v); onControl(b.dataset.toggle, v === 'true'); });
+  scope.querySelectorAll('[data-range]').forEach((r) => { r.value = DEFAULTS.get(r); r.nextElementSibling.value = fmt(r); onControl(r.dataset.range, +r.value); });
+  scope.querySelectorAll('[data-select]').forEach((sel) => { sel.value = DEFAULTS.get(sel); onControl(sel.dataset.select, sel.value); });
+  scope.querySelectorAll('[data-pick]').forEach((g) => { setPick(g, DEFAULTS.get(g)); onControl(g.dataset.pick, DEFAULTS.get(g)); });
+  markModified();
+}
+panel.querySelectorAll('[data-reset]').forEach((b) => { b.onclick = () => resetGroup(b.closest('[data-pane]')); });
+// every visit to the event starts from the show's own programming
+function bindControls(fn) { onControl = fn ?? (() => {}); panel.querySelectorAll('[data-group]').forEach(resetGroup); }
+
+// keyboard: 1–5 switch tabs, H folds the panel (ignored while typing or with the video open)
+addEventListener('keydown', (e) => {
+  if ($('eventUi').hidden || !$('realEvent').hidden || e.target.matches?.('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  const n = +e.key;
+  if (n >= 1 && n <= tabs.length) { if (panel.classList.contains('is-min')) toggleFold(false); openTab(tabs[n - 1].dataset.tab); }
+  else if (e.key === 'h' || e.key === 'H') toggleFold();
+});
 $('helpClose').onclick = () => { $('help').hidden = true; };
 
 // ---------- "Sự kiện thực tế": the real show (official YouTube player) ----------
@@ -129,12 +198,13 @@ function closeReal() {
 document.querySelectorAll('[data-real-open]').forEach((b) => { b.onclick = openReal; });
 $('realClose').onclick = closeReal;
 // collapse the event console to a single handle
-$('evFold').onclick = () => {
+function toggleFold(force) {
   const c = $('evConsole');
-  const min = c.classList.toggle('is-min');
+  const min = c.classList.toggle('is-min', force);
   $('evFold').setAttribute('aria-expanded', String(!min));
   $('evFold').textContent = min ? '▴ Điều khiển' : '▾';
-};
+}
+$('evFold').onclick = () => toggleFold();
 $('realEvent').addEventListener('click', (e) => { if (e.target === $('realEvent')) closeReal(); });
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('realEvent').hidden) closeReal(); });
 

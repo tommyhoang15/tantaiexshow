@@ -99,6 +99,8 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
     stage: triplanar(new THREE.MeshStandardMaterial({ color: '#3a404c', roughness: 0.4, metalness: 0.6 }), plateTex, 0.9),
   };
   const crystalMats = [M.crystal_blue, M.crystal_amber, M.facet, M.crystal_ice, M.tiger];
+  // structure parts from the design file, switchable from the Truss tab
+  const PARTS = { truss: [], fixture: [], speaker: [], fence: [] };
   let tigerMesh = null;
   scene.add(stage);
   stage.updateMatrixWorld(true);
@@ -140,6 +142,7 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
       }
       LED.push(o.material);
     } else if (M[name]) { if (name === 'tiger') tigerMesh = o; o.material = M[name]; }
+    if (PARTS[name]) PARTS[name].push(o);
     o.matrixAutoUpdate = false;
     o.updateMatrix();
   });
@@ -282,11 +285,36 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
 
   // ---------- show ----------
   const state = { auto: true, scene: 'fan', last: null, lastBeat: -1, haze: true };
+  // operator overrides from the control panel (defaults = follow the show)
+  const rig = { master: 1, speed: 1, color: null, on: { top: 1, ledTop: 1, ladderCentre: 1, ladderSide: 1, sideTop: 1, par: 1, blinder: 1, bars: 1 } };
+  const led = { on: true, mode: 'auto', bright: 1, speed: 1, tint: null, t: 0 };
+  const trussOrig = new Map(PARTS.truss.map((o) => [o, o.material]));
+  const FINISH = {
+    black: new THREE.MeshStandardMaterial({ color: '#16181d', metalness: 0.55, roughness: 0.5 }),
+    silver: new THREE.MeshStandardMaterial({ color: '#c3c9d2', metalness: 1, roughness: 0.32 }),
+    white: new THREE.MeshStandardMaterial({ color: '#e9ecf1', metalness: 0.1, roughness: 0.45 }),
+  };
+  disposers.push(() => Object.values(FINISH).forEach((m) => m.dispose()));
+  function setControl(path, v) {
+    const [grp, key] = path.split('.');
+    if (grp === 'light') {
+      if (key in rig.on) rig.on[key] = v ? 1 : 0;
+      else if (key === 'master') rig.master = v;
+      else if (key === 'speed') rig.speed = v;
+      else if (key === 'color') rig.color = v || null;
+    } else if (grp === 'led') {
+      if (key === 'on') led.on = v; else if (key === 'mode') led.mode = v; else if (key === 'bright') led.bright = v;
+      else if (key === 'speed') led.speed = v; else if (key === 'tint') led.tint = v || null;
+    } else if (grp === 'truss') {
+      if (key === 'finish') PARTS.truss.forEach((o) => { o.material = FINISH[v] ?? trussOrig.get(o); });
+      else if (PARTS[key]) PARTS[key].forEach((o) => { o.visible = v; });
+    }
+  }
   // fan→drift, crystal→kaleidoscope, sweep→tunnel, amber→drift, laser/strobe→shatter, climax→tunnel+shards
   const LED_MODE = { fan: 4, crystal: 1, sweep: 3, amber: 0, inferno: 2, laser: 2, strobe: 2, climax: 3 };
   const ledFade = { from: 4, to: 4, mix: 1 };
   const tv = new THREE.Vector3();
-  let hazeAcc = 0, curT = 0;
+  let hazeAcc = 0, curT = 0, showT = 0;
   function fire(kind, now) {
     if (kind === 'co2') co2.forEach((e, i) => e.fire(now + i * 0.03, 1.2));
     if (kind === 'flame') flames.forEach((e, i) => e.fire(now + i * 0.08, 0.9));
@@ -310,7 +338,8 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
     const col = (i, k = 0) => pal[(i + k + Math.floor(beat / 4)) % pal.length];
     const pulse = 0.55 + 0.45 * Math.exp(-bf * 5);
     const strobe = reduceMotion ? 0.6 : Math.floor(beat * 4) % 2 ? 0 : 1;
-    const each = (arr, fn) => arr.forEach((f, i) => { fn(f, i, arr.length); f.update(dt); });
+    // every fixture group answers to the Đèn tab: on/off, master dimmer, colour override
+    const each = (arr, fn, g) => arr.forEach((f, i) => { fn(f, i, arr.length); if (rig.color) f.color.set(rig.color); f.update(dt, rig.master * rig.on[g]); });
 
     // top rows: the signature fan into the sky over the audience (+Z)
     const fan = (f, i, n, spreadMul = 1) => {
@@ -323,15 +352,15 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
       else if (id === 'laser') f.dim = 0.08;
       else { const out = bi % 2 ? 1 : 0.3; f.aimAt(tv.set(u * 180 * out, 90, 85)); f.dim = pulse; }
     };
-    each(heads.top, (f, i, n) => fan(f, i, n));
-    each(heads.ledTop, (f, i, n) => { const u = i / (n - 1) - 0.5; f.color.set(col(i, 1)); f.aimAt(tv.set(u * 60 + 10 * Math.sin(t + i), 40, 90)); f.dim = id === 'laser' ? 0.1 : 0.7 * pulse; });
+    each(heads.top, (f, i, n) => fan(f, i, n), 'top');
+    each(heads.ledTop, (f, i, n) => { const u = i / (n - 1) - 0.5; f.color.set(col(i, 1)); f.aimAt(tv.set(u * 60 + 10 * Math.sin(t + i), 40, 90)); f.dim = id === 'laser' ? 0.1 : 0.7 * pulse; }, 'ledTop');
     each(heads.ladderCentre, (f, i) => {
       f.color.set(col(i, 2));
       const s = f.root.position.x > 0 ? 1 : -1;
       if (id === 'crystal' || id === 'laser') { f.dim = 0; return; }
       f.aimAt(tv.set(f.root.position.x + s * (20 + 25 * Math.sin(t * 1.2 + i)), 25 + (i % 6) * 6, 100));
       f.dim = id === 'strobe' ? strobe : pulse;
-    });
+    }, 'ladderCentre');
     each(heads.ladderSide, (f, i) => {
       f.color.set(col(i, 1));
       const s = f.root.position.x > 0 ? 1 : -1;
@@ -339,32 +368,36 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
       if (id === 'sweep' || id === 'climax') f.aimAt(tv.set(s * 40 + 40 * Math.sin(t * 1.4 + i * 0.3), 20 + (i % 6) * 8, 95));
       else f.aimAt(tv.set(f.root.position.x * 3, 30 + (i % 6) * 8, 110));
       f.dim = id === 'strobe' ? ((bi + i) % 4 === 0 ? 1 : 0) : 0.85 * pulse;
-    });
-    each(heads.sideTop, (f, i) => { f.color.set(id === 'amber' ? '#ffb347' : col(i)); f.aimAt(tv.set(f.root.position.x * 0.5, 2, 50)); f.dim = 0.6 * pulse; });
-    each(heads.par, (f, i) => { f.color.set(id === 'amber' ? '#ffb347' : col(i, 3)); f.aimAt(tv.set(f.root.position.x * 0.6, 2, 46)); f.dim = id === 'laser' ? 0.2 : 0.65 * pulse; });
-    blinderCells.forEach((c) => { c.material.opacity = reduceMotion ? 0.15 : id === 'strobe' || (id === 'climax' && bi % 2 === 0) ? Math.exp(-bf * 7) : id === 'fan' && bi % 16 === 0 ? Math.exp(-bf * 7) : 0; });
+    }, 'ladderSide');
+    each(heads.sideTop, (f, i) => { f.color.set(id === 'amber' ? '#ffb347' : col(i)); f.aimAt(tv.set(f.root.position.x * 0.5, 2, 50)); f.dim = 0.6 * pulse; }, 'sideTop');
+    each(heads.par, (f, i) => { f.color.set(id === 'amber' ? '#ffb347' : col(i, 3)); f.aimAt(tv.set(f.root.position.x * 0.6, 2, 46)); f.dim = id === 'laser' ? 0.2 : 0.65 * pulse; }, 'par');
+    const blK = rig.master * rig.on.blinder;
+    blinderCells.forEach((c) => { c.material.opacity = blK * (reduceMotion ? 0.15 : id === 'strobe' || (id === 'climax' && bi % 2 === 0) ? Math.exp(-bf * 7) : id === 'fan' && bi % 16 === 0 ? Math.exp(-bf * 7) : 0); });
     // LED battens: colour chase running along every bar
-    const cA = new THREE.Color(col(0)), cB = new THREE.Color(col(1));
+    const cA = new THREE.Color(rig.color ?? col(0)), cB = new THREE.Color(rig.color ?? col(1));
+    const barK = rig.master * rig.on.bars;
     for (let i = 0; i < F.bars.length; i++) for (let k = 0; k < BAR_PIX; k++) {
       const w = 0.5 + 0.5 * Math.sin(k * 0.9 - t * 6 + i * 0.7);
-      const c = cA.clone().lerp(cB, w).multiplyScalar(id === 'strobe' ? strobe * 0.8 : 0.15 + 0.45 * w * pulse);
+      const c = cA.clone().lerp(cB, w).multiplyScalar(barK * (id === 'strobe' ? strobe * 0.8 : 0.15 + 0.45 * w * pulse));
       barCol.set([c.r, c.g, c.b], (i * BAR_PIX + k) * 3);
     }
     barGeo.attributes.color.needsUpdate = true;
-    barMat.color.copy(cA).multiplyScalar(0.45 + 0.35 * pulse);
+    barMat.color.copy(cA).multiplyScalar((0.08 + 0.92 * barK) * (0.45 + 0.35 * pulse));
 
     // LED motion mode per scene, cross-faded over ~1.2 s
-    const wantMode = LED_MODE[id] ?? 0;
+    const wantMode = led.mode === 'auto' ? LED_MODE[id] ?? 0 : +led.mode;
+    led.t += dt * led.speed;
+    const ledK = led.on ? led.bright : 0;
     if (wantMode !== ledFade.to) { ledFade.from = ledFade.mix >= 1 ? ledFade.to : ledFade.from; ledFade.to = wantMode; ledFade.mix = 0; }
     ledFade.mix = Math.min(1, ledFade.mix + dt / 1.2);
     const shardAmt = id === 'climax' ? 1 : id === 'sweep' || id === 'fan' ? 0.6 : id === 'strobe' ? 0.8 : 0.25;
     LED.forEach((m) => {
       m.uniforms.uModeA.value = ledFade.from; m.uniforms.uModeB.value = ledFade.to; m.uniforms.uMix.value = ledFade.mix;
       m.uniforms.uShards.value += (shardAmt - m.uniforms.uShards.value) * Math.min(1, dt * 2);
-      m.uniforms.uTime.value = t; m.uniforms.uBeat.value = Math.exp(-bf * 4);
+      m.uniforms.uTime.value = led.t; m.uniforms.uBeat.value = Math.exp(-bf * 4) * ledK;
       // white flash only in Strobe; in Climax CO2 + bloom already carry the hit, a flash would blow the frame out
-      m.uniforms.uFlash.value = !reduceMotion && id === 'strobe' ? Math.exp(-bf * 9) * 0.3 : 0;
-      m.uniforms.uTint.value.set(id === 'amber' ? '#ffb070' : id === 'inferno' ? '#ff5a5a' : id === 'laser' ? '#8fb0ff' : '#ffffff');
+      m.uniforms.uFlash.value = !reduceMotion && led.on && id === 'strobe' ? Math.exp(-bf * 9) * 0.3 : 0;
+      m.uniforms.uTint.value.set(led.tint ?? (id === 'amber' ? '#ffb070' : id === 'inferno' ? '#ff5a5a' : id === 'laser' ? '#8fb0ff' : '#ffffff')).multiplyScalar(ledK);
     });
     crystalMats.forEach((m) => {
       m.uniforms.uTime.value = t;
@@ -391,13 +424,13 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
     onHaze: (on) => { state.haze = on; },
     onCrowd: (on) => { crowd.visible = on; phonePts.visible = on; },
     onGlow: (on) => { glow = on; },
+    onControl: setControl,
     onExit,
   });
 
   return {
     scene, camera, exposure: 1.0,
     update(dt, t) {
-      curT = t;
       if (tween) {
         tween.t += dt / tween.dur;
         const k = tween.t >= 1 ? 1 : 1 - Math.pow(1 - tween.t, 3);
@@ -413,7 +446,9 @@ export async function createCrystal(engine, { ui, onExit, loader, cache }) {
       }
       controls.enabled = !tween;
       controls.update();
-      show(t, dt);
+      showT += dt * rig.speed; // tempo control: the whole show (beat, chases, moves) runs faster/slower
+      curT = showT;
+      show(showT, dt);
     },
     render() { if (glow) composer.render(); else renderer.render(scene, camera); },
     resize(w, h, dpr) {
